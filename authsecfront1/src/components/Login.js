@@ -5,11 +5,9 @@ import { useNavigate } from 'react-router-dom';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:1217/api/v1';
 const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || '1085338903546-fau3ggfp9ek9ebccd4qinsi9a8sppgeg.apps.googleusercontent.com';
+
 const Login = ({ setToken }) => {
-  const [formData, setFormData] = useState({
-    email: '',
-    password: ''
-  });
+  const [formData, setFormData] = useState({ email: '', password: '' });
   const [errors, setErrors] = useState({});
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -26,19 +24,32 @@ const Login = ({ setToken }) => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const parseJwt = (token) => {
+    try {
+      const base64Url = token.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(
+        atob(base64)
+          .split('')
+          .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join('')
+      );
+      return JSON.parse(jsonPayload);
+    } catch (e) {
+      return null;
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validateForm()) return;
-    
+
     setMessage('');
     setIsLoading(true);
-    
+
     try {
       const response = await axios.post(`${API_BASE_URL}/auth/authenticate`, formData);
       if (response?.data) {
@@ -47,14 +58,29 @@ const Login = ({ setToken }) => {
         localStorage.setItem('accessToken', token);
         localStorage.setItem('refreshToken', refreshToken);
         axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-        
-        setMessage('Login successful! Redirecting...');
-        setTimeout(() => navigate('/change-password'), 1500);
+
+        const decoded = parseJwt(token);
+        const userRoles = decoded?.roles;
+        const userRole = userRoles ? userRoles[0] : null;
+
+        console.log('Decoded JWT:', decoded);
+        console.log('User Role:', userRole);
+
+        if (userRole === 'MANAGER') {
+          setMessage('Bienvenue Manager ! Redirection...');
+          setTimeout(() => navigate('/homecompany'), 1500);
+        } else if (userRole === 'ROLE_USER') {
+          setMessage('Bienvenue sur E-InternMatch ! Redirection...');
+          setTimeout(() => navigate('/student'), 1500);
+        } else {
+          setMessage('Login successful! Redirecting...');
+          setTimeout(() => navigate('/change-password'), 1500);
+        }
       }
     } catch (error) {
-      const errorMessage = error.response?.data?.message || 
-                         error.response?.data?.error || 
-                         'Login failed. Please try again.';
+      const errorMessage = error.response?.data?.message ||
+        error.response?.data?.error ||
+        'Login failed. Please try again.';
       setMessage(errorMessage);
     } finally {
       setIsLoading(false);
@@ -64,10 +90,10 @@ const Login = ({ setToken }) => {
   const handleGoogleSuccess = async (googleResponse) => {
     setIsLoading(true);
     setMessage('');
-    
+
     try {
       const response = await axios.post(
-        `${API_BASE_URL}/auth/google`, 
+        `${API_BASE_URL}/auth/google`,
         { token: googleResponse.credential }
       );
 
@@ -77,9 +103,24 @@ const Login = ({ setToken }) => {
         localStorage.setItem('accessToken', access_token);
         localStorage.setItem('refreshToken', refresh_token);
         axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
-        
-        setMessage(`Welcome ${name}! Redirecting...`);
-        setTimeout(() => navigate('/change-password'), 1500);
+
+        const decoded = parseJwt(access_token);
+        const userRoles = decoded?.roles;
+        const userRole = userRoles ? userRoles[0] : null;
+
+        console.log('Decoded JWT:', decoded);
+        console.log('User Role:', userRole);
+
+        if (userRole === 'MANAGER') {
+          setMessage(`Bienvenue ${name} ! Redirection...`);
+          setTimeout(() => navigate('/homecompany'), 1500);
+        } else if (userRole === 'ROLE_USER') {
+          setMessage(`Bienvenue ${name} ! Redirection...`);
+          setTimeout(() => navigate('/student'), 1500);
+        } else {
+          setMessage(`Welcome ${name}! Redirecting...`);
+          setTimeout(() => navigate('/change-password'), 1500);
+        }
       }
     } catch (error) {
       setMessage(error.response?.data?.message || 'Google login failed. Please try again.');
@@ -96,94 +137,78 @@ const Login = ({ setToken }) => {
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
       <div style={styles.container}>
         <h2 style={styles.title}>Login</h2>
-        
-        <form style={styles.form} onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} style={styles.form}>
           <div style={styles.inputContainer}>
-            <label htmlFor="email" style={styles.label}>Email</label>
+            <label style={styles.label}>Email</label>
             <input
+              style={{ ...styles.input, ...(errors.email ? styles.inputError : {}) }}
               type="email"
-              id="email"
               name="email"
-              placeholder="Enter your email"
               value={formData.email}
               onChange={handleChange}
-              style={{...styles.input, ...(errors.email && styles.inputError)}}
               required
             />
             {errors.email && <span style={styles.errorText}>{errors.email}</span>}
           </div>
-          
+
           <div style={styles.inputContainer}>
-            <label htmlFor="password" style={styles.label}>Password</label>
+            <label style={styles.label}>Password</label>
             <div style={styles.passwordInputWrapper}>
               <input
-                type={showPassword ? "text" : "password"}
-                id="password"
+                style={{ ...styles.input, ...(errors.password ? styles.inputError : {}) }}
+                type={showPassword ? 'text' : 'password'}
                 name="password"
-                placeholder="Enter your password"
                 value={formData.password}
                 onChange={handleChange}
-                style={{...styles.input, ...(errors.password && styles.inputError)}}
                 required
               />
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={togglePasswordVisibility}
                 style={styles.showPasswordButton}
-                aria-label={showPassword ? "Hide password" : "Show password"}
               >
-                {showPassword ? '👁️' : '👁️‍🗨️'}
+                {showPassword ? '🙈' : '👁'}
               </button>
             </div>
             {errors.password && <span style={styles.errorText}>{errors.password}</span>}
           </div>
-          
-          <button 
-            type="submit" 
-            style={styles.button}
-            disabled={isLoading}
-            aria-busy={isLoading}
-          >
+
+          <button type="submit" disabled={isLoading} style={styles.button}>
             {isLoading ? 'Logging in...' : 'Login'}
           </button>
-        </form>
-        
-        <div style={styles.registerLinkContainer}>
-          <p style={styles.registerText}>Don't have an account?</p>
-          <button 
-            onClick={() => navigate('/register')} 
-            style={styles.textButton}
+
+          {/* ---- Nouveau bouton Register ---- */}
+          <button
+            type="button"
+            onClick={() => navigate('/register')}
+            style={{ ...styles.button, backgroundColor: '#4caf50', marginTop: '0.5rem' }}
           >
             Register
           </button>
-        </div>
-        
-        {/* Correct divider implementation */}
+          {/* ------------------------------------ */}
+        </form>
+
         <div style={styles.dividerContainer}>
           <div style={styles.dividerLine}></div>
-          <span style={styles.dividerText}>OR</span>
+          <span style={styles.dividerText}>or</span>
           <div style={styles.dividerLine}></div>
         </div>
-        
-        <div style={styles.socialLogin}>
-          <div style={styles.googleBtnContainer}>
-            <GoogleLogin 
-              onSuccess={handleGoogleSuccess} 
-              onError={() => setMessage("Google login failed")}
-              text="continue_with"
-              shape="rectangular"
-              locale='en'
-            />
-          </div>
+
+        <div style={styles.googleBtnContainer}>
+          <GoogleLogin onSuccess={handleGoogleSuccess} onError={() => setMessage("Google login failed")} />
         </div>
 
         {message && (
-          <p style={{
-            ...styles.message,
-            ...(message.toLowerCase().includes('fail') ? styles.error : styles.success)
-          }}>
+          <div
+            style={{
+              ...styles.message,
+              ...(message.includes('fail') || message.includes('invalide')
+                ? styles.error
+                : styles.success),
+            }}
+          >
             {message}
-          </p>
+          </div>
         )}
       </div>
     </GoogleOAuthProvider>
@@ -260,28 +285,6 @@ const styles = {
     transition: 'background-color 0.2s',
     marginTop: '0.5rem',
   },
-  textButton: {
-    background: 'none',
-    border: 'none',
-    color: '#1976d2',
-    cursor: 'pointer',
-    fontSize: '0.875rem',
-    fontWeight: '500',
-    padding: '0',
-    textDecoration: 'underline',
-  },
-  registerLinkContainer: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: '0.5rem',
-    marginTop: '1rem',
-  },
-  registerText: {
-    fontSize: '0.875rem',
-    color: '#666666',
-    margin: '0',
-  },
   dividerContainer: {
     display: 'flex',
     alignItems: 'center',
@@ -296,11 +299,6 @@ const styles = {
     padding: '0 1rem',
     color: '#999999',
     fontSize: '0.875rem',
-  },
-  socialLogin: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1rem',
   },
   googleBtnContainer: {
     display: 'flex',
